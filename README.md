@@ -1,0 +1,1 @@
+This is an R package for estimating ordered regression models that allow some variables to have different coefficients across the outcome levels. This becomes neccessary when the proportional odds assumption is not met.
