@@ -1,0 +1,52 @@
+set.seed(123)
+
+# Number of observations
+n <- 1000
+
+# Simulate predictors
+X1 <- rnorm(n)
+X2 <- rnorm(n)
+Z1 <- rnorm(n)
+
+# True coefficients
+thresholds <- c(-1.5, 0.5)
+beta <- c(0.5, -0.3)
+gamma <- c(0.2, 0.4)
+
+# Simulate latent variable and thresholds
+theta <- beta[1] * X1 + beta[2] * X2 
+theta12 <- -thresholds[1] + theta + gamma[1] * Z1
+theta23 <- -thresholds[2] + theta + gamma[2] * Z1
+
+# Probability of each outcome level
+P1 <- 1-1/(1+exp(-theta12))
+P3 <- 1/(1+exp(-theta23))
+P2 <- 1/(1+exp(-theta12))-P3
+
+P<- cbind(P1,P2,P3)
+
+# Simulate outcome variable
+y <- apply(P,1, rmultinom, n=1, size=1)
+y[2,] <- y[2,]*2
+y[3,] <- y[3,]*3
+
+y <- colSums(y)
+
+# Create data frame
+data <- data.frame(y = y, X1 = X1, X2 = X2, Z1 = Z1)
+
+
+# Load required libraries
+library(modelr)
+library(maxLik)
+library(stats)
+
+# Define formulas
+formula <- y ~ X1 + X2
+partial_formula <- ~ Z1
+
+# Estimate model
+model <- orderedReg(formula = formula, partial_formula = partial_formula, data = data, method = "BHHH", family = "logit")
+
+# Display model fit metrics
+summary(model)
