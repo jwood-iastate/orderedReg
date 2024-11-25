@@ -102,3 +102,5 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BHHH", f
   result <- maxLik::maxLik(logLik = logLikFunction, start = initial_params, method = method, printLevel = printLevel)
   return(result)
 }
+
+# https://hardhat.tidymodels.org/
