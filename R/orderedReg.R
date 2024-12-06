@@ -88,8 +88,14 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
   categories <- sort(unique(y))
   N_thresholds <- length(categories) - 1
 
-  # Construct X matrix without intercept (thresholds act as intercepts)
+  # Construct X matrix without intercept
   X <- model.matrix(update(formula, . ~ . - 1), data = data)
+
+  # Define names for threshold parameters and beta parameters
+  x_names_intercepts <- paste0("Threshold(", head(categories, -1), "|", tail(categories, -1), ")")
+  x_names_betas <- colnames(X)
+  # Start with thresholds and then append betas
+  x_names <- c(x_names_intercepts, x_names_betas)
 
   # Process weights
   if (is.null(weights)) {
@@ -100,7 +106,6 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
   }
 
   # Process partial formulas
-  # If partial_formula is provided, we create a Z_list of design matrices.
   Z_list <- NULL
   if (!is.null(partial_formula)) {
     if (is.list(partial_formula)) {
@@ -108,25 +113,39 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
       if (length(partial_formula) != N_thresholds) {
         stop("If partial_formula is a list, it must have one formula per threshold.")
       }
+
       Z_list <- lapply(partial_formula, function(pf) {
-        # Construct a formula without intercept using reformulate to avoid '.'
         pfterms <- terms(pf)
         predictors <- attr(pfterms, "term.labels")
-        # reformulate ensures no '.' is used; intercept = FALSE removes intercept
         pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
         model.matrix(pf_no_intercept, data = data)
       })
+
+      # Add names for gamma parameters
+      # Z_list[[i]] corresponds to threshold i, which separates categories[i] and categories[i+1]
+      for (i in seq_len(N_thresholds)) {
+        z_names <- colnames(Z_list[[i]])
+        x_names <- c(x_names, paste0(z_names, ":", categories[i+1]))
+      }
+
     } else {
       # Single partial formula applies to all thresholds
       pfterms <- terms(partial_formula)
       predictors <- attr(pfterms, "term.labels")
       pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
       Z_mat <- model.matrix(pf_no_intercept, data = data)
+
       Z_list <- replicate(N_thresholds, Z_mat, simplify = FALSE)
+
+      # Add names for gamma parameters
+      z_names <- colnames(Z_mat)
+      for (i in seq_len(N_thresholds)) {
+        x_names <- c(x_names, paste0(z_names, ":", categories[i+1]))
+      }
     }
   }
 
-  # Function to get initial thresholds based on cumulative proportions
+  # Initial values
   get_initial_thresholds <- function(y, categories, family) {
     thresholds <- numeric(length(categories) - 1)
     for (i in seq_along(thresholds)) {
@@ -158,7 +177,7 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
     out
   }
 
-  # Log-likelihood function calling the C++ code
+  # Log-likelihood
   logLikFunction <- function(params) {
     thr <- get_strictly_increasing_thresholds(params, N_thresholds)
     transformed_params <- c(thr, params[(N_thresholds + 1):length(params)])
@@ -182,6 +201,9 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
   est_params <- fit$estimate
   final_thresholds <- get_strictly_increasing_thresholds(est_params, N_thresholds)
   fit$estimate[1:N_thresholds] <- final_thresholds
+
+  # Assign final coefficient names to the fitted object
+  names(fit$estimate) <- x_names
 
   class(fit) <- c("orderedReg", class(fit))
   attr(fit, "formula") <- formula
