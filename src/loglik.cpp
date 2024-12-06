@@ -8,32 +8,43 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
                             const arma::mat& X1,
                             const arma::vec& y,
                             const std::string& family,
-                            const Nullable<arma::mat>& Z_ = R_NilValue,
-                            const bool partial = false,
-                            const Nullable<arma::vec>& weights_ = R_NilValue) {
-  int k = categories.n_elem - 1;
-  arma::vec thresholds = params.subvec(0, k - 1);
-  arma::vec beta = params.subvec(k, k + X1.n_cols - 1);
+                            const Rcpp::List& Z_list = R_NilValue,
+                            const Rcpp::Nullable<arma::vec>& weights_ = R_NilValue) {
+  int k = categories.n_elem - 1; // Number of thresholds
+  arma::vec thresholds = params.subvec(0, k - 1); // Extract thresholds
+  arma::vec beta = params.subvec(k, k + X1.n_cols - 1); // Extract proportional odds coefficients
 
-  arma::mat Z;
-  arma::mat gamma;
-  if (partial && Z_.isNotNull()) {
-    Z = as<arma::mat>(Z_);
-    int n_gamma_params = params.n_elem - (k + X1.n_cols);
-    int n_gamma_rows = n_gamma_params / Z.n_cols;
-    arma::vec gamma_params = params.subvec(k + X1.n_cols, params.n_elem - 1);
-    gamma = arma::reshape(gamma_params, n_gamma_rows, Z.n_cols);
+  // Parse Z_list into a vector of matrices for level-specific design matrices
+  std::vector<arma::mat> Z_matrices;
+  std::vector<arma::vec> gamma_vectors;
+  int expected_params_size = k + X1.n_cols; // Start with thresholds and beta coefficients
+
+  // Check if Z_list is not empty
+  if (!Z_list.isNULL() && Z_list.size() > 0) {
+    for (int i = 0; i < k; ++i) {
+      arma::mat Z = as<arma::mat>(Z_list[i]);
+      Z_matrices.push_back(Z);
+      expected_params_size += Z.n_cols; // Add gamma size for each level
+      arma::vec gamma = params.subvec(expected_params_size - Z.n_cols, expected_params_size - 1);
+      gamma_vectors.push_back(gamma);
+    }
   }
 
-  int n = y.n_elem;
-  arma::vec Prob = arma::zeros(n);
-  arma::vec eta(n);
+  // Check parameter size consistency
+  if (params.n_elem != static_cast<arma::uword>(expected_params_size)) {
+    stop("Mismatch in the size of 'params'. Expected size: " + std::to_string(expected_params_size) +
+      ", but got: " + std::to_string(params.n_elem));
+  }
+
+  int n = y.n_elem; // Number of observations
+  arma::vec Prob = arma::zeros(n); // Probabilities
+  arma::vec eta(n); // Linear predictor
 
   for (unsigned int i = 0; i < categories.n_elem; ++i) {
     if (i == 0) {
       eta = -thresholds[i] + X1 * beta;
-      if (partial && Z_.isNotNull()) {
-        eta += Z * gamma.row(i).t();
+      if (!Z_matrices.empty()) {
+        eta += Z_matrices[i] * gamma_vectors[i];
       }
       arma::vec Pi;
       if (family == "logit") {
@@ -46,8 +57,8 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
       Prob.elem(idx) = P.elem(idx);
     } else {
       eta = -thresholds[i - 1] + X1 * beta;
-      if (partial && Z_.isNotNull()) {
-        eta += Z * gamma.row(i - 1).t();
+      if (!Z_matrices.empty()) {
+        eta += Z_matrices[i - 1] * gamma_vectors[i - 1];
       }
       arma::vec Pi;
       if (family == "logit") {
@@ -58,8 +69,8 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
       arma::vec P;
       if (i < categories.n_elem - 1) {
         arma::vec eta2 = -thresholds[i] + X1 * beta;
-        if (partial && Z_.isNotNull()) {
-          eta2 += Z * gamma.row(i).t();
+        if (!Z_matrices.empty()) {
+          eta2 += Z_matrices[i] * gamma_vectors[i];
         }
         arma::vec Pi2;
         if (family == "logit") {
@@ -81,10 +92,9 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
   arma::vec logProb = arma::log(arma::max(Prob, eps));
 
   // Handle weights
-  arma::vec weights;
   if (weights_.isNotNull()) {
-    weights = as<arma::vec>(weights_);
-    if (weights.n_elem != n) {
+    arma::vec weights = as<arma::vec>(weights_);
+    if (static_cast<int>(weights.n_elem) != n) { // Cast weights.n_elem for comparison
       stop("Length of weights must match the number of observations.");
     }
     logProb = logProb % weights; // Element-wise multiplication
