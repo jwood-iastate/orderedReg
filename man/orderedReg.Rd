@@ -8,12 +8,10 @@ orderedReg(
   formula,
   partial_formula = NULL,
   data,
-  method = "BHHH",
+  method = "BFGS",
   family = "logit",
-  verbose = FALSE,
   weights = NULL,
-  se_type = "default",
-  bootstrap_reps = 1000
+  verbose = FALSE
 )
 }
 \arguments{
@@ -24,40 +22,24 @@ If a list is provided, each element corresponds to a specific outcome level (exc
 
 \item{data}{A data frame containing the variables in the model.}
 
-\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "CG", "BFGS", "BFGS-R", "NM", and "SANN".}
+\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".}
 
 \item{family}{The family of the model, either "logit" or "probit". Default is "logit".}
 
-\item{verbose}{Logical indicating whether to print optimization details during fitting. Default is `FALSE`.}
-
 \item{weights}{Name of the variable in the data containing sampling weights (optional).}
 
-\item{se_type}{The type of standard error to compute. Options include "default" or "bootstrap". Default is "default".}
-
-\item{bootstrap_reps}{Number of bootstrap replications for calculating standard errors if `se_type = "bootstrap"`. Default is `1000`.}
+\item{verbose}{Logical indicating whether to print optimization details during fitting. Default is `FALSE`.}
 }
 \value{
-A list containing model results, including:
-\describe{
-  \item{`estimate`}{Parameter estimates.}
-  \item{`logLik`}{Log-likelihood value at convergence.}
-  \item{`gradient`}{Gradient vector at convergence.}
-  \item{`hessian`}{Hessian matrix at convergence.}
-  \item{`bootstrap_se`}{If bootstrap is used, contains a data frame with bootstrap standard errors and confidence intervals.}
-}
-Additional attributes, such as the design matrices, categories, and formula information, are included for further analysis.
+A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.
 }
 \description{
 Estimate Ordinal and Partial Proportional Odds Models with Transformed Thresholds
 }
 \details{
-This function estimates ordered and generalized ordered regression models
-with transformed threshold parameters to ensure they are strictly increasing.
-
-For non-proportional odds, users can specify a single formula for `partial_formula` to apply the same variables to all thresholds or a list of formulas where each corresponds to a specific outcome level (excluding the first level). This flexibility allows for level-specific covariates in the model.
+This function estimates ordered and generalized ordered regression models with strictly increasing thresholds. For non-proportional odds, either a single partial formula or a list of partial formulas may be provided.
 }
 \examples{
-# Example 1: Proportional odds model
 set.seed(123)
 data <- data.frame(
   y = factor(sample(1:3, 100, replace = TRUE), ordered = TRUE),
@@ -67,6 +49,7 @@ data <- data.frame(
   z2 = rbinom(100, 1, 0.5)
 )
 
+# Proportional odds model
 result1 <- orderedReg(
   formula = y ~ x1 + x2,
   data = data,
@@ -74,7 +57,7 @@ result1 <- orderedReg(
 )
 summary(result1)
 
-# Example 2: Partial proportional odds model with a single formula
+# Partial proportional odds model with a single formula
 result2 <- orderedReg(
   formula = y ~ x1,
   partial_formula = ~ z1 + z2,
@@ -83,7 +66,7 @@ result2 <- orderedReg(
 )
 summary(result2)
 
-# Example 3: Partial proportional odds model with a list of formulas
+# Partial proportional odds model with a list of formulas
 partial_formulas <- list(
   ~ z1,         # Variables for the second level
   ~ z1 + z2     # Variables for the third level
@@ -96,25 +79,16 @@ result3 <- orderedReg(
 )
 summary(result3)
 
-# Example 4: Weighted proportional odds model
+# Weighted model and using the verbose option
 data$weights <- runif(100, 0.5, 2)
 result4 <- orderedReg(
   formula = y ~ x1 + x2,
   data = data,
   family = "logit",
-  weights = "weights"
+  weights = "weights",
+  verbose=TRUE
 )
 summary(result4)
 
-# Example 5: Bootstrap standard errors
-result5 <- orderedReg(
-  formula = y ~ x1 + x2,
-  partial_formula = ~ z1 + z2,
-  data = data,
-  family = "logit",
-  se_type = "bootstrap",
-  bootstrap_reps = 500
-)
-result5$bootstrap_se
 
 }

@@ -13,9 +13,7 @@ Imports: Rcpp (>= 1.0.12),
          rsample, 
          dplyr,
          purrr,
-         tidyr,
-         modelr,
-         tibble
+         tidyr
 LinkingTo: Rcpp, RcppArmadillo
 Depends: R (>= 3.0.2)
 RoxygenNote: 7.3.2

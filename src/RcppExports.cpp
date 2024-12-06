@@ -12,8 +12,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // logLikFunctionCpp
-arma::vec logLikFunctionCpp(const arma::vec& params, const arma::vec& categories, const arma::mat& X1, const arma::vec& y, const std::string& family, const Rcpp::List& Z_list, const Rcpp::Nullable<arma::vec>& weights_);
-RcppExport SEXP _orderedReg_logLikFunctionCpp(SEXP paramsSEXP, SEXP categoriesSEXP, SEXP X1SEXP, SEXP ySEXP, SEXP familySEXP, SEXP Z_listSEXP, SEXP weights_SEXP) {
+arma::vec logLikFunctionCpp(const arma::vec& params, const arma::vec& categories, const arma::mat& X1, const arma::vec& y, const std::string& family, const List& Z_list, const arma::vec& weights);
+RcppExport SEXP _orderedReg_logLikFunctionCpp(SEXP paramsSEXP, SEXP categoriesSEXP, SEXP X1SEXP, SEXP ySEXP, SEXP familySEXP, SEXP Z_listSEXP, SEXP weightsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -22,9 +22,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const arma::mat& >::type X1(X1SEXP);
     Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
     Rcpp::traits::input_parameter< const std::string& >::type family(familySEXP);
-    Rcpp::traits::input_parameter< const Rcpp::List& >::type Z_list(Z_listSEXP);
-    Rcpp::traits::input_parameter< const Rcpp::Nullable<arma::vec>& >::type weights_(weights_SEXP);
-    rcpp_result_gen = Rcpp::wrap(logLikFunctionCpp(params, categories, X1, y, family, Z_list, weights_));
+    Rcpp::traits::input_parameter< const List& >::type Z_list(Z_listSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type weights(weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(logLikFunctionCpp(params, categories, X1, y, family, Z_list, weights));
     return rcpp_result_gen;
 END_RCPP
 }

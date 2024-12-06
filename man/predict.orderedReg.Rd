@@ -7,19 +7,25 @@
 \method{predict}{orderedReg}(object, newdata = NULL, type = "class", ...)
 }
 \arguments{
-\item{object}{A fitted orderedReg model}
+\item{object}{A fitted orderedReg model.}
 
-\item{newdata}{New data for prediction (optional)}
+\item{newdata}{Optional new data for which to predict.}
 
-\item{type}{Type of prediction: "class" or "prob"}
+\item{type}{Type of prediction: "class" or "prob". Default is "class".}
 
-\item{...}{Additional arguments}
+\item{...}{Additional arguments.}
+}
+\value{
+Depending on `type`, either a vector of predicted classes or a matrix of predicted probabilities.
 }
 \description{
 Predict method for orderedReg objects
 }
+\details{
+For probability predictions, the function returns a matrix of probabilities for each category.
+For class predictions, the function returns the most likely category for each observation.
+}
 \examples{
-# Example 1: Proportional odds model
 set.seed(123)
 data <- data.frame(
   y = factor(sample(1:3, 100, replace = TRUE), ordered = TRUE),
@@ -29,19 +35,15 @@ data <- data.frame(
   z2 = rbinom(100, 1, 0.5)
 )
 
-result1 <- orderedReg(
-  formula = y ~ x1 + x2,
-  data = data,
-  family = "logit"
-)
+# Fit model
+result <- orderedReg(formula = y ~ x1 + x2, data = data, family = "logit")
 
-# Predict probabilities for new data
-predict(fitted_model, newdata = data, type = "prob")
+# Predict classes on the training data
+preds_class <- predict(result, newdata = data, type = "class")
+table(preds_class, data$y)
 
-# Predict classes for new data
-pred_classes <- predict(fitted_model, newdata = data, type = "class")
-
-# Generate table of predicted vs observed classes
-table(pred_classes, data$y)
+# Predict probabilities
+preds_prob <- predict(result, newdata = data, type = "prob")
+head(preds_prob)
 
 }

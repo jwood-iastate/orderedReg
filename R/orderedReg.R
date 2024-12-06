@@ -5,30 +5,15 @@
 #' @param partial_formula A formula or list of formulas specifying variables for the non-proportional odds part of the model.
 #' If a list is provided, each element corresponds to a specific outcome level (excluding the first level).
 #' @param data A data frame containing the variables in the model.
-#' @param method The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "CG", "BFGS", "BFGS-R", "NM", and "SANN".
+#' @param method The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".
 #' @param family The family of the model, either "logit" or "probit". Default is "logit".
 #' @param verbose Logical indicating whether to print optimization details during fitting. Default is `FALSE`.
 #' @param weights Name of the variable in the data containing sampling weights (optional).
-#' @param se_type The type of standard error to compute. Options include "default" or "bootstrap". Default is "default".
-#' @param bootstrap_reps Number of bootstrap replications for calculating standard errors if `se_type = "bootstrap"`. Default is `1000`.
-#' @return A list containing model results, including:
-#' \describe{
-#'   \item{`estimate`}{Parameter estimates.}
-#'   \item{`logLik`}{Log-likelihood value at convergence.}
-#'   \item{`gradient`}{Gradient vector at convergence.}
-#'   \item{`hessian`}{Hessian matrix at convergence.}
-#'   \item{`bootstrap_se`}{If bootstrap is used, contains a data frame with bootstrap standard errors and confidence intervals.}
-#' }
-#' Additional attributes, such as the design matrices, categories, and formula information, are included for further analysis.
-#'
+#' @return A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.
 #' @details
-#' This function estimates ordered and generalized ordered regression models
-#' with transformed threshold parameters to ensure they are strictly increasing.
-#'
-#' For non-proportional odds, users can specify a single formula for `partial_formula` to apply the same variables to all thresholds or a list of formulas where each corresponds to a specific outcome level (excluding the first level). This flexibility allows for level-specific covariates in the model.
+#' This function estimates ordered and generalized ordered regression models with strictly increasing thresholds. For non-proportional odds, either a single partial formula or a list of partial formulas may be provided.
 #'
 #' @examples
-#' # Example 1: Proportional odds model
 #' set.seed(123)
 #' data <- data.frame(
 #'   y = factor(sample(1:3, 100, replace = TRUE), ordered = TRUE),
@@ -38,6 +23,7 @@
 #'   z2 = rbinom(100, 1, 0.5)
 #' )
 #'
+#' # Proportional odds model
 #' result1 <- orderedReg(
 #'   formula = y ~ x1 + x2,
 #'   data = data,
@@ -45,7 +31,7 @@
 #' )
 #' summary(result1)
 #'
-#' # Example 2: Partial proportional odds model with a single formula
+#' # Partial proportional odds model with a single formula
 #' result2 <- orderedReg(
 #'   formula = y ~ x1,
 #'   partial_formula = ~ z1 + z2,
@@ -54,7 +40,7 @@
 #' )
 #' summary(result2)
 #'
-#' # Example 3: Partial proportional odds model with a list of formulas
+#' # Partial proportional odds model with a list of formulas
 #' partial_formulas <- list(
 #'   ~ z1,         # Variables for the second level
 #'   ~ z1 + z2     # Variables for the third level
@@ -67,26 +53,17 @@
 #' )
 #' summary(result3)
 #'
-#' # Example 4: Weighted proportional odds model
+#' # Weighted model and using the verbose option
 #' data$weights <- runif(100, 0.5, 2)
 #' result4 <- orderedReg(
 #'   formula = y ~ x1 + x2,
 #'   data = data,
 #'   family = "logit",
-#'   weights = "weights"
+#'   weights = "weights",
+#'   verbose=TRUE
 #' )
 #' summary(result4)
 #'
-#' # Example 5: Bootstrap standard errors
-#' result5 <- orderedReg(
-#'   formula = y ~ x1 + x2,
-#'   partial_formula = ~ z1 + z2,
-#'   data = data,
-#'   family = "logit",
-#'   se_type = "bootstrap",
-#'   bootstrap_reps = 500
-#' )
-#' result5$bootstrap_se
 #'
 #' @importFrom stats model.frame model.matrix model.response qlogis qnorm quantile reformulate sd terms update
 #' @importFrom Rcpp sourceCpp
@@ -94,275 +71,129 @@
 #' @importFrom dplyr mutate group_by summarise %>%
 #' @importFrom tidyr unnest
 #' @importFrom purrr map
-#' @importFrom utils head tail
+#' @importFrom utils head tail globalVariables
 #' @useDynLib orderedReg
 #' @export
+orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", family = "logit", weights = NULL, verbose=FALSE) {
+  # Check family
+  if (!family %in% c("logit", "probit")) stop("Family must be 'logit' or 'probit'")
 
-orderedReg <- function(
-    formula,
-    partial_formula = NULL,
-    data,
-    method = "BHHH",
-    family = "logit",
-    verbose = FALSE,
-    weights = NULL,
-    se_type = "default",
-    bootstrap_reps = 1000
-) {
-  # Check inputs
-  if (!family %in% c("logit", "probit")) stop("Family must be 'logit' or 'probit'.")
-  if (!se_type %in% c("default", "bootstrap")) stop("se_type must be 'default' or 'bootstrap'.")
-
-  # Prepare the design matrix for the proportional odds model
+  # Extract outcome and ensure it is ordered
   mf <- model.frame(formula, data)
-  X <- as.matrix(modelr::model_matrix(data, formula))
-  X1 <- X
-  y <- stats::model.response(mf)
+  y <- model.response(mf)
+  if (!is.ordered(y)) {
+    stop("The response variable must be an ordered factor.")
+  }
+
   categories <- sort(unique(y))
-  num_thresholds <- length(categories) - 1
+  N_thresholds <- length(categories) - 1
 
-  # Variable names for parameters
-  x_names_betas <- colnames(X)
-  x_names_intercepts <- paste0("Threshold ", head(categories, -1), ":", tail(categories, -1))
-  x_names <- c(x_names_intercepts, x_names_betas)
+  # Construct X matrix without intercept (thresholds act as intercepts)
+  X <- model.matrix(update(formula, . ~ . - 1), data = data)
 
-  # Prepare design matrices for non-proportional odds
-  # Prepare design matrices for non-proportional odds
-  Z_list <- list()
+  # Process weights
+  if (is.null(weights)) {
+    w <- rep(1, length(y))
+  } else {
+    w <- data[[weights]]
+    if (length(w) != length(y)) stop("Length of weights must match number of observations.")
+  }
+
+  # Process partial formulas
+  # If partial_formula is provided, we create a Z_list of design matrices.
+  Z_list <- NULL
   if (!is.null(partial_formula)) {
     if (is.list(partial_formula)) {
-      if (length(partial_formula) != num_thresholds) {
-        stop("If partial_formula is a list, it must have one formula for each threshold (excluding the first level).")
+      # Multiple formulas, one per threshold
+      if (length(partial_formula) != N_thresholds) {
+        stop("If partial_formula is a list, it must have one formula per threshold.")
       }
-      for (i in seq_along(partial_formula)) {
-        Z <- model.matrix(partial_formula[[i]], data = data)
-        Z <- Z[, -1, drop = FALSE]  # Drop intercept if present
-        Z_list[[i]] <- Z
-      }
+      Z_list <- lapply(partial_formula, function(pf) {
+        # Construct a formula without intercept using reformulate to avoid '.'
+        pfterms <- terms(pf)
+        predictors <- attr(pfterms, "term.labels")
+        # reformulate ensures no '.' is used; intercept = FALSE removes intercept
+        pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
+        model.matrix(pf_no_intercept, data = data)
+      })
     } else {
-      Z <- model.matrix(partial_formula, data = data)
-      Z <- Z[, -1, drop = FALSE]  # Drop intercept if present
-      Z_list <- replicate(num_thresholds, Z, simplify = FALSE)
+      # Single partial formula applies to all thresholds
+      pfterms <- terms(partial_formula)
+      predictors <- attr(pfterms, "term.labels")
+      pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
+      Z_mat <- model.matrix(pf_no_intercept, data = data)
+      Z_list <- replicate(N_thresholds, Z_mat, simplify = FALSE)
     }
   }
 
-
-  # get thresholds
-  get_thresholds <- function(params, num_thresholds) {
-    if (length(params) < num_thresholds) {
-      stop("Insufficient parameters to compute thresholds.")
+  # Function to get initial thresholds based on cumulative proportions
+  get_initial_thresholds <- function(y, categories, family) {
+    thresholds <- numeric(length(categories) - 1)
+    for (i in seq_along(thresholds)) {
+      p <- mean(y <= categories[i])
+      thresholds[i] <- if (family == "logit") qlogis(p) else qnorm(p)
     }
-    inits <- params[1:num_thresholds]
-    thresholds <- inits
-    for (i in 2:num_thresholds) {
-      thresholds[i] <- thresholds[i - 1] + abs(inits[i])
-    }
-    return(thresholds)
+    thresholds
   }
 
-
-
-  # Default regression function
-  run_regression <- function(data, formula, partial_formula, method, family, verbose, weights) {
-    formula <- update(formula, . ~ . - 1)
-    if (!is.null(partial_formula)) {
-      partial_formula <- update(partial_formula, . ~ . - 1)
-    }
-
-    # Prepare the design matrix for the proportional odds model
-    mf <- model.frame(formula, data)
-    X <- as.matrix(modelr::model_matrix(data, formula))
-    X1 <- X
-    y <- stats::model.response(mf)
-    categories <- sort(unique(y))
-    num_thresholds <- length(categories) - 1
-
-    # Variable names for parameters
-    x_names_betas <- colnames(X)
-    x_names_intercepts <- paste0("Threshold ", head(categories, -1), ":", tail(categories, -1))
-    x_names <- c(x_names_intercepts, x_names_betas)
-
-    # Prepare the design matrix for the non-proportional odds model if specified
-    if (!is.null(partial_formula)) {
-      parterms <- terms(partial_formula)
-      parpreds <- attributes(parterms)$term.labels
-      partial_formula <- reformulate(parpreds, response = NULL, intercept = FALSE)
-      Z <- model.matrix(partial_formula, data = data)
-      z_names <- colnames(Z)
-      for (i in seq_along(head(categories, -1))) {
-        x_names <- c(x_names, paste0(z_names, ":", categories[i + 1]))
-      }
-    } else {
-      Z <- NULL
-    }
-
-    # Method of moments to determine initial values
-    # Method of moments to determine initial values
-    get_initial_values <- function(y, X, Z_list, family) {
-      thresholds <- numeric(length(categories) - 1)
-      for (i in seq_along(thresholds)) {
-        thresholds[i] <- if (family == "logit") qlogis(mean(y <= categories[i])) else qnorm(mean(y <= categories[i]))
-      }
-      beta <- rep(0, ncol(X))
-      params <- c(thresholds, beta)
-
-      # Check and handle Z_list
-      if (!is.null(Z_list) && length(Z_list) > 0) {
-        gamma <- unlist(lapply(Z_list, function(Z) rep(0, ncol(Z))))
-        params <- c(params, gamma)
-        expected_gamma_size <- sum(sapply(Z_list, ncol, simplify = TRUE))
-        if (length(params) != (length(thresholds) + ncol(X) + expected_gamma_size)) {
-          stop("Mismatch in parameter vector length.")
-        }
-      } else if (!is.null(Z_list) && length(Z_list) == 0) {
-        # If Z_list is an empty list, do not add gamma parameters
-        expected_gamma_size <- 0
-      } else {
-        # If Z_list is NULL, skip gamma
-        expected_gamma_size <- 0
-      }
-
-      return(params)
-    }
-
-
-    initial_params <- get_initial_values(y, X1, Z_list, family)
-    names(initial_params) <- x_names
-
-    # Handle weights
-    if (is.null(weights)) {
-      weights <- rep(1, length(y))
-    } else {
-      weights <- data[[weights]]
-      if (length(weights) != length(y)) stop("Length of weights must match the number of observations.")
-    }
-
-    # Define the log-likelihood function that calls the C++ function
-    logLikFunction <- function(params) {
-      thresholds <- get_thresholds(params, num_thresholds)
-      names(thresholds) <- x_names_intercepts[1:num_thresholds]
-      transformed_params <- c(thresholds, params[(num_thresholds + 1):length(params)])
-
-      logLikValue <- logLikFunctionCpp(
-        params = transformed_params,
-        categories = categories,
-        X1 = X1,
-        y = y,
-        family = family,
-        Z_list = if (length(Z_list) > 0) Z_list else list(),
-        weights_ = weights
-      )
-      return(logLikValue)
-    }
-
-    # Use maxLik to estimate parameters
-    if (verbose) printLevel <- 2 else printLevel <- 0
-    result <- maxLik::maxLik(
-      logLik = logLikFunction,
-      start = initial_params,
-      method = method,
-      printLevel = printLevel
-    )
-
-    # Modify the result to show actual thresholds
-    original_estimate <- result$estimate
-    thresholds <- get_thresholds(original_estimate, num_thresholds)
-    names(thresholds) <- x_names_intercepts[1:num_thresholds]
-    result$estimate[1:num_thresholds] <- thresholds
-
-    class(result) <- c("orderedReg", class(result))
-
-    # Add additional attributes that will be useful for methods
-    attr(result, "formula") <- formula
-    attr(result, "partial_formula") <- partial_formula
-    attr(result, "data") <- data
-    attr(result, "family") <- family
-    attr(result, "categories") <- categories
-    attr(result, "N_thresholds") <- num_thresholds
-    attr(result, "X") <- X1
-    attr(result, "y") <- y
-
-    # If partial formula exists, add Z matrix
-    if (!is.null(partial_formula)) {
-      attr(result, "Z") <- Z
-    }
-
-    return(result)
-
+  init_thresholds <- get_initial_thresholds(y, categories, family)
+  init_betas <- rep(0, ncol(X))
+  if (!is.null(Z_list)) {
+    init_gamma <- unlist(lapply(Z_list, function(Z) rep(0, ncol(Z))))
+    initial_params <- c(init_thresholds, init_betas, init_gamma)
+  } else {
+    initial_params <- c(init_thresholds, init_betas)
   }
 
-  # Default estimation
-  if (se_type == "default") {
-    return(run_regression(
-      data,
-      formula,
-      partial_formula,
-      method,
+  # Transform raw thresholds to strictly increasing
+  get_strictly_increasing_thresholds <- function(params, num_thresholds) {
+    raw_thresholds <- params[1:num_thresholds]
+    out <- numeric(num_thresholds)
+    out[1] <- raw_thresholds[1]
+    if (num_thresholds > 1) {
+      for (i in 2:num_thresholds) {
+        out[i] <- out[i - 1] + abs(raw_thresholds[i])
+      }
+    }
+    out
+  }
+
+  # Log-likelihood function calling the C++ code
+  logLikFunction <- function(params) {
+    thr <- get_strictly_increasing_thresholds(params, N_thresholds)
+    transformed_params <- c(thr, params[(N_thresholds + 1):length(params)])
+    val <- logLikFunctionCpp(
+      transformed_params,
+      categories,
+      X,
+      y,
       family,
-      verbose,
-      weights
-    ))
-  }
-
-  # Bootstrap standard errors
-  if (se_type == "bootstrap") {
-    # Create bootstrap resamples
-    bootstrap_samples <- rsample::bootstraps(data, times = bootstrap_reps)
-
-    # Function to fit model on each bootstrap sample
-    boot_model <- function(split) {
-      boot_data <- rsample::analysis(split)
-      result <- run_regression(
-        boot_data,
-        formula,
-        partial_formula,
-        method,
-        family,
-        verbose,
-        weights
-      )
-
-      # Extract coefficients
-      coefs <- result$estimate
-      names(coefs) <- names(result$estimate)
-
-      return(tibble::tibble(
-        term = names(coefs),
-        estimate = unname(coefs)
-      ))
-    }
-
-    # Perform bootstrap
-    bootstrap_results <- bootstrap_samples %>%
-      dplyr::mutate(results = map(splits, boot_model)) %>%
-      unnest(results)
-
-    # Compute bootstrapped standard errors
-    bootstrap_se <- bootstrap_results %>%
-      dplyr::group_by(term) %>%
-      dplyr::summarise(
-        bootstrap_estimate = mean(estimate),
-        bootstrap_std_error = sd(estimate),
-        boostrap_t_value = bootstrap_estimate / bootstrap_std_error,
-        p_value = 2 * stats::pnorm(-1*abs(boostrap_t_value)),
-        bootstrap_lower_ci = quantile(estimate, 0.025),
-        bootstrap_upper_ci = quantile(estimate, 0.975)
-      )
-
-    # Run the original model to combine with bootstrap results
-    original_model <- run_regression(
-      data,
-      formula,
-      partial_formula,
-      method,
-      family,
-      verbose,
-      weights
+      Z_list,
+      w
     )
-
-    # Combine original model with bootstrap results
-    original_model$bootstrap_se <- bootstrap_se
-
-    return(original_model)
+    sum(val)
   }
+
+  # Fit model
+  if (isTRUE(method == "BHHH")) method <- "BFGS"
+  fit <- maxLik::maxLik(logLik = logLikFunction, start = initial_params, method = method, printLevel=ifelse(verbose,2,0))
+
+  # Replace raw thresholds with final strictly increasing thresholds
+  est_params <- fit$estimate
+  final_thresholds <- get_strictly_increasing_thresholds(est_params, N_thresholds)
+  fit$estimate[1:N_thresholds] <- final_thresholds
+
+  class(fit) <- c("orderedReg", class(fit))
+  attr(fit, "formula") <- formula
+  attr(fit, "partial_formula") <- partial_formula
+  attr(fit, "data") <- data
+  attr(fit, "family") <- family
+  attr(fit, "categories") <- categories
+  attr(fit, "N_thresholds") <- N_thresholds
+  attr(fit, "X") <- X
+  attr(fit, "y") <- y
+  attr(fit, "weights") <- w
+  if (!is.null(Z_list)) attr(fit, "Z_list") <- Z_list
+
+  return(fit)
 }
