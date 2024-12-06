@@ -45,14 +45,34 @@ If partial formulas are provided, additional parameters for these non-proportion
 The gradient and Hessian are approximated numerically via finite differences, using the Rcpp functions.
 }
 \examples{
-set.seed(123)
+set.seed(10101)
+
 data <- data.frame(
-  y = factor(sample(1:3, 100, replace = TRUE), ordered = TRUE),
   x1 = rnorm(100),
   x2 = rbinom(100, 1, 0.5),
   z1 = rnorm(100),
   z2 = rbinom(100, 1, 0.5)
 )
+
+y.hat.1 <- -1.5 + 0.5*data$x1 + 0.5*data$x2
+y.hat.2 <- -0.5 + 0.5*data$x1 + 0.65*data$x2
+
+# Compute probabilities
+p2 <- plogis(y.hat.2, lower.tail = FALSE)
+p1 <- plogis(y.hat.1, lower.tail = FALSE) - p2
+p0 <- 1 - p1 - p2
+
+# Combine probabilities into a matrix
+prob_matrix <- cbind(p0, p1, p2)
+
+# Generate the ordinal outcome for each observation
+y_values <- apply(prob_matrix, 1, function(p) {
+  outcome <- rmultinom(1, size = 1, prob = p)
+  which(outcome == 1)
+})
+
+# Create the ordered factor
+data$y <- factor(y_values, levels = c(1,2,3), ordered = TRUE)
 
 # Proportional odds model
 result1 <- orderedReg(

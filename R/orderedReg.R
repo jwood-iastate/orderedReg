@@ -18,14 +18,34 @@
 #'
 #'
 #' @examples
-#' set.seed(123)
+#' set.seed(10101)
+#'
 #' data <- data.frame(
-#'   y = factor(sample(1:3, 100, replace = TRUE), ordered = TRUE),
 #'   x1 = rnorm(100),
 #'   x2 = rbinom(100, 1, 0.5),
 #'   z1 = rnorm(100),
 #'   z2 = rbinom(100, 1, 0.5)
 #' )
+#'
+#' y.hat.1 <- -1.5 + 0.5*data$x1 + 0.5*data$x2
+#' y.hat.2 <- -0.5 + 0.5*data$x1 + 0.65*data$x2
+#'
+#' # Compute probabilities
+#' p2 <- plogis(y.hat.2, lower.tail = FALSE)
+#' p1 <- plogis(y.hat.1, lower.tail = FALSE) - p2
+#' p0 <- 1 - p1 - p2
+#'
+#' # Combine probabilities into a matrix
+#' prob_matrix <- cbind(p0, p1, p2)
+#'
+#' # Generate the ordinal outcome for each observation
+#' y_values <- apply(prob_matrix, 1, function(p) {
+#'   outcome <- rmultinom(1, size = 1, prob = p)
+#'   which(outcome == 1)
+#' })
+#'
+#' # Create the ordered factor
+#' data$y <- factor(y_values, levels = c(1,2,3), ordered = TRUE)
 #'
 #' # Proportional odds model
 #' result1 <- orderedReg(
@@ -69,7 +89,7 @@
 #' summary(result4)
 #'
 #'
-#' @importFrom stats model.frame model.matrix model.response qlogis qnorm quantile reformulate sd terms update
+#' @importFrom stats model.frame model.matrix model.response qlogis qnorm quantile reformulate sd terms
 #' @importFrom Rcpp sourceCpp
 #' @importFrom rsample bootstraps
 #' @importFrom dplyr mutate group_by summarise %>%
@@ -100,7 +120,7 @@ orderedReg <- function(
   J <- length(categories)
   if (J<3) stop("Need at least 3 categories.")
 
-  X <- model.matrix(update(formula, .~.-1), data=data)
+  X <- model.matrix(reformulate(attr(terms(formula), "term.labels"), intercept = FALSE),data = data)
 
   if (is.null(weights)) {
     w <- rep(1, length(y))
@@ -118,11 +138,11 @@ orderedReg <- function(
         stop("If partial_formula is a list, it must have one formula per threshold.")
       }
       Z_list <- lapply(partial_formula, function(pf) {
-        pf_no_int <- update(pf, .~.-1)
+        pf_no_int <- reformulate(attr(terms(pf), "term.labels"), intercept = FALSE)
         model.matrix(pf_no_int, data=data)
       })
     } else {
-      pf_no_int <- update(partial_formula, .~.-1)
+      pf_no_int <- reformulate(attr(terms(partial_formula), "term.labels"), intercept = FALSE)
       Z_mat <- model.matrix(pf_no_int, data=data)
       Z_list <- replicate(k, Z_mat, simplify=FALSE)
     }
