@@ -57,6 +57,7 @@ data$y <- factor(y_values, levels = c(1,2,3), ordered = TRUE)
 
 # Fit model
 result <- orderedReg(formula = y ~ x1 + x2, data = data, family = "logit")
+summary(result)
 
 # Predict classes on the training data
 preds_class <- predict(result, newdata = data, type = "class")

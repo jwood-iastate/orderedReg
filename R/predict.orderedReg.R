@@ -43,6 +43,7 @@
 #'
 #' # Fit model
 #' result <- orderedReg(formula = y ~ x1 + x2, data = data, family = "logit")
+#' summary(result)
 #'
 #' # Predict classes on the training data
 #' preds_class <- predict(result, newdata = data, type = "class")
@@ -130,7 +131,7 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
   theta <- matrix(NA, nrow = nrow(X), ncol = N_thresholds)
 
   for (i in seq_len(N_thresholds)) {
-    theta[, i] <- as.vector(eta) + thresholds[i]
+    theta[, i] <- as.vector(eta) - thresholds[i]
     if (!is.null(Z_list)) {
       theta[, i] <- theta[, i] + as.vector(Z_list[[i]] %*% gamma_list[[i]])
     }
