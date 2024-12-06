@@ -5,3 +5,11 @@ logLikFunctionCpp <- function(params, categories, X1, y, family, Z_list, weights
     .Call('_orderedReg_logLikFunctionCpp', PACKAGE = 'orderedReg', params, categories, X1, y, family, Z_list, weights)
 }
 
+hessApproxCpp <- function(fun, x, delta = 1e-4) {
+    .Call('_orderedReg_hessApproxCpp', PACKAGE = 'orderedReg', fun, x, delta)
+}
+
+gradApproxCpp <- function(fun, x, delta = 1e-4) {
+    .Call('_orderedReg_gradApproxCpp', PACKAGE = 'orderedReg', fun, x, delta)
+}
+

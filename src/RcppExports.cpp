@@ -28,9 +28,37 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// hessApproxCpp
+Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta);
+RcppExport SEXP _orderedReg_hessApproxCpp(SEXP funSEXP, SEXP xSEXP, SEXP deltaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::Function >::type fun(funSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    rcpp_result_gen = Rcpp::wrap(hessApproxCpp(fun, x, delta));
+    return rcpp_result_gen;
+END_RCPP
+}
+// gradApproxCpp
+Rcpp::NumericMatrix gradApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta);
+RcppExport SEXP _orderedReg_gradApproxCpp(SEXP funSEXP, SEXP xSEXP, SEXP deltaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::Function >::type fun(funSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< double >::type delta(deltaSEXP);
+    rcpp_result_gen = Rcpp::wrap(gradApproxCpp(fun, x, delta));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_orderedReg_logLikFunctionCpp", (DL_FUNC) &_orderedReg_logLikFunctionCpp, 7},
+    {"_orderedReg_hessApproxCpp", (DL_FUNC) &_orderedReg_hessApproxCpp, 3},
+    {"_orderedReg_gradApproxCpp", (DL_FUNC) &_orderedReg_gradApproxCpp, 3},
     {NULL, NULL, 0}
 };
 

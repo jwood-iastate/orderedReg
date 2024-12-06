@@ -9,9 +9,13 @@
 #' @param family The family of the model, either "logit" or "probit". Default is "logit".
 #' @param verbose Logical indicating whether to print optimization details during fitting. Default is `FALSE`.
 #' @param weights Name of the variable in the data containing sampling weights (optional).
+#' @param delta Step size for numerical derivatives. Default is 1e-4.
 #' @return A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.
 #' @details
-#' This function estimates ordered and generalized ordered regression models with strictly increasing thresholds. For non-proportional odds, either a single partial formula or a list of partial formulas may be provided.
+#' This function estimates ordered and generalized ordered regression models with strictly increasing thresholds.
+#' If partial formulas are provided, additional parameters for these non-proportional odds are estimated.
+#' The gradient and Hessian are approximated numerically via finite differences, using the Rcpp functions.
+#'
 #'
 #' @examples
 #' set.seed(123)
@@ -74,136 +78,110 @@
 #' @importFrom utils head tail globalVariables
 #' @useDynLib orderedReg
 #' @export
-orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", family = "logit", weights = NULL, verbose=FALSE) {
-  # Check family
-  if (!family %in% c("logit", "probit")) stop("Family must be 'logit' or 'probit'")
-
-  # Extract outcome and ensure it is ordered
-  mf <- model.frame(formula, data)
-  y <- model.response(mf)
-  if (!is.ordered(y)) {
-    stop("The response variable must be an ordered factor.")
+orderedReg <- function(
+    formula,
+    partial_formula = NULL,
+    data,
+    family = "logit",
+    weights = NULL,
+    verbose=FALSE,
+    method="BFGS",
+    delta = 1e-4  # step size for numeric derivatives
+) {
+  if (!family %in% c("probit","logit")) {
+    stop("This code currently supports family='probit' or 'logit'.")
   }
 
+  mf <- model.frame(formula, data)
+  y <- model.response(mf)
+  if (!is.ordered(y)) stop("Response must be an ordered factor.")
+
   categories <- sort(unique(y))
-  N_thresholds <- length(categories) - 1
+  J <- length(categories)
+  if (J<3) stop("Need at least 3 categories.")
 
-  # Construct X matrix without intercept
-  X <- model.matrix(update(formula, . ~ . - 1), data = data)
+  X <- model.matrix(update(formula, .~.-1), data=data)
 
-  # Define names for threshold parameters and beta parameters
-  x_names_intercepts <- paste0("Threshold(", head(categories, -1), "|", tail(categories, -1), ")")
-  x_names_betas <- colnames(X)
-  # Start with thresholds and then append betas
-  x_names <- c(x_names_intercepts, x_names_betas)
-
-  # Process weights
   if (is.null(weights)) {
     w <- rep(1, length(y))
   } else {
     w <- data[[weights]]
-    if (length(w) != length(y)) stop("Length of weights must match number of observations.")
+    if (length(w) != length(y)) stop("Weights length must match number of observations.")
   }
 
-  # Process partial formulas
+  # Handle partial formula
+  k <- J - 1
   Z_list <- NULL
   if (!is.null(partial_formula)) {
     if (is.list(partial_formula)) {
-      # Multiple formulas, one per threshold
-      if (length(partial_formula) != N_thresholds) {
+      if (length(partial_formula) != k) {
         stop("If partial_formula is a list, it must have one formula per threshold.")
       }
-
       Z_list <- lapply(partial_formula, function(pf) {
-        pfterms <- terms(pf)
-        predictors <- attr(pfterms, "term.labels")
-        pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
-        model.matrix(pf_no_intercept, data = data)
+        pf_no_int <- update(pf, .~.-1)
+        model.matrix(pf_no_int, data=data)
       })
-
-      # Add names for gamma parameters
-      # Z_list[[i]] corresponds to threshold i, which separates categories[i] and categories[i+1]
-      for (i in seq_len(N_thresholds)) {
-        z_names <- colnames(Z_list[[i]])
-        x_names <- c(x_names, paste0(z_names, ":", categories[i+1]))
-      }
-
     } else {
-      # Single partial formula applies to all thresholds
-      pfterms <- terms(partial_formula)
-      predictors <- attr(pfterms, "term.labels")
-      pf_no_intercept <- reformulate(predictors, response = NULL, intercept = FALSE)
-      Z_mat <- model.matrix(pf_no_intercept, data = data)
-
-      Z_list <- replicate(N_thresholds, Z_mat, simplify = FALSE)
-
-      # Add names for gamma parameters
-      z_names <- colnames(Z_mat)
-      for (i in seq_len(N_thresholds)) {
-        x_names <- c(x_names, paste0(z_names, ":", categories[i+1]))
-      }
+      pf_no_int <- update(partial_formula, .~.-1)
+      Z_mat <- model.matrix(pf_no_int, data=data)
+      Z_list <- replicate(k, Z_mat, simplify=FALSE)
     }
   }
 
-  # Initial values
-  get_initial_thresholds <- function(y, categories, family) {
-    thresholds <- numeric(length(categories) - 1)
-    for (i in seq_along(thresholds)) {
-      p <- mean(y <= categories[i])
-      thresholds[i] <- if (family == "logit") qlogis(p) else qnorm(p)
-    }
-    thresholds
-  }
-
-  init_thresholds <- get_initial_thresholds(y, categories, family)
-  init_betas <- rep(0, ncol(X))
+  # Parameter initialization
+  linpred <- as.vector(X %*% rep(0, ncol(X)))
+  cuts_init <- quantile(linpred, probs=seq(1/J, (J-1)/J, length.out=J-1))
+  diffs <- diff(c(0, cuts_init))
+  diffs[diffs<=0] <- 0.1
+  alpha_init <- log(diffs)
+  beta_init <- rep(0, ncol(X))
   if (!is.null(Z_list)) {
-    init_gamma <- unlist(lapply(Z_list, function(Z) rep(0, ncol(Z))))
-    initial_params <- c(init_thresholds, init_betas, init_gamma)
+    gamma_init <- unlist(lapply(Z_list, function(Z) rep(0, ncol(Z))))
+    initial_params <- c(alpha_init, beta_init, gamma_init)
   } else {
-    initial_params <- c(init_thresholds, init_betas)
+    initial_params <- c(alpha_init, beta_init)
   }
 
-  # Transform raw thresholds to strictly increasing
-  get_strictly_increasing_thresholds <- function(params, num_thresholds) {
-    raw_thresholds <- params[1:num_thresholds]
-    out <- numeric(num_thresholds)
-    out[1] <- raw_thresholds[1]
-    if (num_thresholds > 1) {
-      for (i in 2:num_thresholds) {
-        out[i] <- out[i - 1] + abs(raw_thresholds[i])
-      }
-    }
-    out
+  # Define log-likelihood function
+  logLikFunction <- function(par) {
+    logLik <- logLikFunctionCpp(par, categories, X, y, family, Z_list, w)
+    return(logLik)
   }
 
-  # Log-likelihood
-  logLikFunction <- function(params) {
-    thr <- get_strictly_increasing_thresholds(params, N_thresholds)
-    transformed_params <- c(thr, params[(N_thresholds + 1):length(params)])
-    val <- logLikFunctionCpp(
-      transformed_params,
-      categories,
-      X,
-      y,
-      family,
-      Z_list,
-      w
-    )
-    sum(val)
+  # Define gradient and Hessian functions via numeric approximation
+  gradFunction <- function(par) {
+    # Use numeric gradient approximation
+    gradients <- gradApproxCpp(logLikFunction, par, delta = delta)
+    return(gradients)
   }
 
-  # Fit model
-  if (isTRUE(method == "BHHH")) method <- "BFGS"
-  fit <- maxLik::maxLik(logLik = logLikFunction, start = initial_params, method = method, printLevel=ifelse(verbose,2,0))
+  hessFunction <- function(par) {
+    # Use numeric Hessian approximation
+    hessians <- hessApproxCpp(logLikFunction, par, delta = delta)
+    print(hessians)
+    return(hessians)
+  }
 
-  # Replace raw thresholds with final strictly increasing thresholds
-  est_params <- fit$estimate
-  final_thresholds <- get_strictly_increasing_thresholds(est_params, N_thresholds)
-  fit$estimate[1:N_thresholds] <- final_thresholds
+  # Now run maxLik with both gradient and Hessian
+  fit <- maxLik::maxLik(
+    logLik = logLikFunction,
+    grad = gradFunction,
+    # hess = hessFunction,
+    start = initial_params,
+    method = method,
+    printLevel = ifelse(verbose, 2, 0)
+  )
 
-  # Assign final coefficient names to the fitted object
-  names(fit$estimate) <- x_names
+  alpha_names <- paste0("alpha_", 1:(J-2))
+  beta_names <- colnames(X)
+  param_names <- c(alpha_names, beta_names)
+  if (!is.null(Z_list)) {
+    z_names <- unlist(lapply(seq_along(Z_list), function(i) {
+      paste0(colnames(Z_list[[i]]), ":", categories[i+1])
+    }))
+    param_names <- c(param_names, z_names)
+  }
+  names(fit$estimate) <- param_names
 
   class(fit) <- c("orderedReg", class(fit))
   attr(fit, "formula") <- formula
@@ -211,7 +189,6 @@ orderedReg <- function(formula, partial_formula = NULL, data, method = "BFGS", f
   attr(fit, "data") <- data
   attr(fit, "family") <- family
   attr(fit, "categories") <- categories
-  attr(fit, "N_thresholds") <- N_thresholds
   attr(fit, "X") <- X
   attr(fit, "y") <- y
   attr(fit, "weights") <- w

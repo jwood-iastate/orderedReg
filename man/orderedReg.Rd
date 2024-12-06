@@ -8,10 +8,11 @@ orderedReg(
   formula,
   partial_formula = NULL,
   data,
-  method = "BFGS",
   family = "logit",
   weights = NULL,
-  verbose = FALSE
+  verbose = FALSE,
+  method = "BFGS",
+  delta = 1e-04
 )
 }
 \arguments{
@@ -22,13 +23,15 @@ If a list is provided, each element corresponds to a specific outcome level (exc
 
 \item{data}{A data frame containing the variables in the model.}
 
-\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".}
-
 \item{family}{The family of the model, either "logit" or "probit". Default is "logit".}
 
 \item{weights}{Name of the variable in the data containing sampling weights (optional).}
 
 \item{verbose}{Logical indicating whether to print optimization details during fitting. Default is `FALSE`.}
+
+\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".}
+
+\item{delta}{Step size for numerical derivatives. Default is 1e-4.}
 }
 \value{
 A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.
@@ -37,7 +40,9 @@ A list containing model results, including parameter estimates, log-likelihood, 
 Estimate Ordinal and Partial Proportional Odds Models with Transformed Thresholds
 }
 \details{
-This function estimates ordered and generalized ordered regression models with strictly increasing thresholds. For non-proportional odds, either a single partial formula or a list of partial formulas may be provided.
+This function estimates ordered and generalized ordered regression models with strictly increasing thresholds.
+If partial formulas are provided, additional parameters for these non-proportional odds are estimated.
+The gradient and Hessian are approximated numerically via finite differences, using the Rcpp functions.
 }
 \examples{
 set.seed(123)

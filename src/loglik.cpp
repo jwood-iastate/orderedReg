@@ -103,3 +103,158 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
 
   return logProb;
 }
+
+
+// [[Rcpp::depends(RcppArmadillo)]]
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// This function approximates gradient and Hessian of fun at x using central differences
+// fun: an R function that takes a numeric vector and returns a scalar (double).
+// x: numeric vector of parameters.
+// delta: step size for finite differences.
+// Returns a list with "gradient" and "Hessian".
+
+
+Rcpp::List gradHessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta = 1e-4) {
+  int nx = x.size();
+
+  // Evaluate f(x)
+  Rcpp::NumericVector fxVec = fun(x);
+  if (fxVec.size() != 1) {
+    Rcpp::stop("Function must return a scalar.");
+  }
+  double fx = fxVec[0];
+
+  Rcpp::NumericVector grad(nx);
+  Rcpp::NumericMatrix H(nx, nx);
+
+  // Compute gradient and Hessian
+  // Gradient and diagonal Hessian elements
+  for (int j = 0; j < nx; j++) {
+    Rcpp::NumericVector xadd = Rcpp::clone(x);
+    Rcpp::NumericVector xsub = Rcpp::clone(x);
+    xadd[j] = x[j] + delta;
+    xsub[j] = x[j] - delta;
+
+    double fadd = as<double>(fun(xadd));
+    double fsub = as<double>(fun(xsub));
+
+    // Diagonal Hessian element
+    H(j,j) = (fadd - 2.0*fx + fsub)/(delta*delta);
+    // Gradient element
+    grad[j] = (fadd - fsub)/(2.0*delta);
+
+    // Off-diagonal Hessian elements
+    for (int i = 0; i < j; i++) {
+      Rcpp::NumericVector xaa = Rcpp::clone(x);
+      Rcpp::NumericVector xas = Rcpp::clone(x);
+      Rcpp::NumericVector xsa = Rcpp::clone(x);
+      Rcpp::NumericVector xss = Rcpp::clone(x);
+
+      // i < j, we compute upper triangle
+      xaa[i] = x[i] + delta; xaa[j] = x[j] + delta;
+      xas[i] = x[i] + delta; xas[j] = x[j] - delta;
+      xsa[i] = x[i] - delta; xsa[j] = x[j] + delta;
+      xss[i] = x[i] - delta; xss[j] = x[j] - delta;
+
+      double faa = as<double>(fun(xaa));
+      double fas = as<double>(fun(xas));
+      double fsa = as<double>(fun(xsa));
+      double fss = as<double>(fun(xss));
+
+      double Hij = (faa - fas - fsa + fss)/(4.0*delta*delta);
+      H(i,j) = Hij;
+      H(j,i) = Hij;
+    }
+  }
+
+  return Rcpp::List::create(
+    Rcpp::Named("gradient") = grad,
+    Rcpp::Named("Hessian") = H
+  );
+}
+
+// [[Rcpp::export]]
+Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-4) {
+  int nx = x.size();
+  Rcpp::NumericVector fxVec = fun(x);
+  if (fxVec.size()!=1) Rcpp::stop("Function must return a scalar.");
+  double fx = fxVec[0];
+
+  Rcpp::NumericMatrix H(nx, nx);
+
+  // Diagonal and off-diagonal Hessian elements
+  for (int j=0; j<nx; j++) {
+    Rcpp::NumericVector xadd = Rcpp::clone(x);
+    Rcpp::NumericVector xsub = Rcpp::clone(x);
+    xadd[j] = x[j] + delta;
+    xsub[j] = x[j] - delta;
+    double fadd = as<double>(fun(xadd));
+    double fsub = as<double>(fun(xsub));
+    H(j,j) = (fadd - 2.0*fx + fsub)/(delta*delta);
+
+    for (int i=0; i<j; i++) {
+      Rcpp::NumericVector xaa = Rcpp::clone(x);
+      Rcpp::NumericVector xas = Rcpp::clone(x);
+      Rcpp::NumericVector xsa = Rcpp::clone(x);
+      Rcpp::NumericVector xss = Rcpp::clone(x);
+
+      xaa[i] = x[i]+delta; xaa[j] = x[j]+delta;
+      xas[i] = x[i]+delta; xas[j] = x[j]-delta;
+      xsa[i] = x[i]-delta; xsa[j] = x[j]+delta;
+      xss[i] = x[i]-delta; xss[j] = x[j]-delta;
+
+      double faa = as<double>(fun(xaa));
+      double fas = as<double>(fun(xas));
+      double fsa = as<double>(fun(xsa));
+      double fss = as<double>(fun(xss));
+
+      double Hij = (faa - fas - fsa + fss)/(4.0*delta*delta);
+      H(i,j) = Hij;
+      H(j,i) = Hij;
+    }
+  }
+
+  return H;
+}
+
+
+ // [[Rcpp::export]]
+ Rcpp::NumericMatrix gradApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-4) {
+   int nx = x.size();
+
+   // Evaluate f(x) to determine output size (n)
+   Rcpp::NumericVector f0Vec = fun(x);
+   int n = f0Vec.size();
+   if (n == 0) {
+     Rcpp::stop("Function must return a non-empty vector.");
+   }
+
+   // Create output matrix: n rows (observations), nx columns (parameters)
+   Rcpp::NumericMatrix gradMat(n, nx);
+
+   // For each parameter dimension, compute partial derivatives
+   for (int i = 0; i < nx; i++) {
+     Rcpp::NumericVector xadd = Rcpp::clone(x);
+     Rcpp::NumericVector xsub = Rcpp::clone(x);
+     xadd[i] = x[i] + delta;
+     xsub[i] = x[i] - delta;
+
+     // Evaluate function at perturbed parameters
+     Rcpp::NumericVector fadd = fun(xadd);
+     Rcpp::NumericVector fsub = fun(xsub);
+
+     // Check that fadd and fsub have the same length as f0Vec
+     if (fadd.size() != n || fsub.size() != n) {
+       Rcpp::stop("Function must return vector of consistent length.");
+     }
+
+     // Compute central difference for each observation
+     for (int obs = 0; obs < n; obs++) {
+       gradMat(obs, i) = (fadd[obs] - fsub[obs]) / (2.0 * delta);
+     }
+   }
+
+   return gradMat;
+ }

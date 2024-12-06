@@ -40,9 +40,9 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
   }
 
   family <- attr(object, "family")
-  N_thresholds <- attr(object, "N_thresholds")
   formula <- attr(object, "formula")
   categories <- attr(object, "categories")
+  N_thresholds <- length(categories)-1
   partial_formula <- attr(object, "partial_formula")
   X_orig <- attr(object, "X")
 
@@ -83,6 +83,7 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
       Z_list <- NULL
     }
   }
+
 
   # Extract parameter estimates
   thresholds <- object$estimate[1:N_thresholds]
