@@ -8,5 +8,5 @@ You can install the development version of `orderedReg` using:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("jwood-iastate/gorderedReg")
+devtools::install_github("jwood-iastate/orderedReg")
 ```
