@@ -14,6 +14,15 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
   arma::vec thresholds = params.subvec(0, k - 1);
   arma::vec beta = params.subvec(k, k + X1.n_cols - 1);
 
+  for (int i = 1; i < k; i++) {
+    // add absolute value of threshold to previous threshold for all but the first threshold
+    if (thresholds[i] < 0) {
+      thresholds[i] += thresholds[i - 1];
+    } else {
+      thresholds[i] -= thresholds[i - 1];
+    }
+  }
+
   int current_index = k + X1.n_cols;
   std::vector<arma::mat> Z_matrices;
   std::vector<arma::vec> gamma_list;

@@ -185,14 +185,20 @@ orderedReg <- function(
   # Now run maxLik with both gradient and Hessian
   fit <- maxLik::maxLik(
     logLik = logLikFunction,
-    grad = gradFunction,
+    # grad = gradFunction,
     # hess = hessFunction,
     start = initial_params,
     method = method,
     printLevel = ifelse(verbose, 2, 0)
   )
 
-  alpha_names <- paste0("alpha_", 1:(J-2))
+  # Adjust thresholds based on estimates and how estimated
+  thresholds <- fit$estimate[1:(J-1)]
+  for (i in 2:(J-1)) { # Do not adjust the first estimate
+    fit$estimate[i] <- fit$estimate[i-1] + abs(fit$estimate[i])
+  }
+
+  alpha_names <- paste0("Threshold ", 1:(J-1), ":", 2:(J))
   beta_names <- colnames(X)
   param_names <- c(alpha_names, beta_names)
   if (!is.null(Z_list)) {
