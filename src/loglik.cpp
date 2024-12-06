@@ -16,11 +16,7 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
 
   for (int i = 1; i < k; i++) {
     // add absolute value of threshold to previous threshold for all but the first threshold
-    if (thresholds[i] < 0) {
-      thresholds[i] += thresholds[i - 1];
-    } else {
-      thresholds[i] -= thresholds[i - 1];
-    }
+    thresholds[i] = thresholds[i - 1] + std::abs(thresholds[i]);
   }
 
   int current_index = k + X1.n_cols;
