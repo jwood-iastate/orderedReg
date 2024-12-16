@@ -19,6 +19,11 @@ arma::vec logLikFunctionCpp(const arma::vec& params,
     thresholds[i] = thresholds[i - 1] + std::abs(thresholds[i]);
   }
 
+  // Before main computation
+  if (thresholds.has_nan() || beta.has_nan()) {
+    return arma::vec(y.n_elem, arma::fill::zeros);
+  }
+
   int current_index = k + X1.n_cols;
   std::vector<arma::mat> Z_matrices;
   std::vector<arma::vec> gamma_list;
@@ -228,6 +233,10 @@ Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, dou
  // [[Rcpp::export]]
  Rcpp::NumericMatrix gradApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-4) {
    int nx = x.size();
+
+   if (delta <= 0) {
+     Rcpp::stop("Delta must be a positive number.");
+   }
 
    // Evaluate f(x) to determine output size (n)
    Rcpp::NumericVector f0Vec = fun(x);

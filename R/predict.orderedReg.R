@@ -53,11 +53,26 @@
 #' preds_prob <- predict(result, newdata = data, type = "prob")
 #' head(preds_prob)
 #'
-#' @importFrom stats model.matrix plogis pnorm
+#' @importFrom stats model.matrix plogis pnorm na.omit update
 #' @export
 predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
-  if (missing(object)) {
-    stop("A fitted orderedReg model object is required.")
+
+  if (missing(object) || !inherits(object, "orderedReg")) {
+    stop("A valid fitted orderedReg model object is required.")
+  }
+
+  type <- match.arg(type, choices = c("class", "prob"))
+
+  if (!is.null(newdata)) {
+    required_cols <- all.vars(attr(object, "formula"))
+    missing_cols <- setdiff(required_cols, names(newdata))
+    if (length(missing_cols) > 0) {
+      stop(paste("Missing columns in newdata:", paste(missing_cols, collapse = ", ")))
+    }
+    if (sum(is.na(newdata)) > 0) {
+      warning("Missing values in newdata. Removing rows with missing values.")
+      newdata <- na.omit(newdata)
+    }
   }
 
   family <- attr(object, "family")
@@ -67,36 +82,26 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
   partial_formula <- attr(object, "partial_formula")
   X_orig <- attr(object, "X")
 
-  # If no newdata provided, use original data
   if (is.null(newdata)) {
     X <- X_orig
     if (!is.null(partial_formula)) {
-      # Use the original Z_list stored at fitting time
       Z_list <- attr(object, "Z_list")
     } else {
       Z_list <- NULL
     }
   } else {
-    # Re-generate the design matrix for the new data
-    # The fitted model used formula with no intercept (as thresholds act as intercepts),
-    # so ensure consistent model.matrix call
     X <- model.matrix(update(formula, . ~ . - 1), data = newdata)
-
-    # If partial formulas exist, reconstruct Z_list for new data
     if (!is.null(partial_formula)) {
       if (is.list(partial_formula)) {
-        # Multiple formulas, one for each threshold
         if (length(partial_formula) != N_thresholds) {
           stop("partial_formula must have one formula per threshold (excluding the first level).")
         }
         Z_list <- vector("list", N_thresholds)
         for (i in seq_len(N_thresholds)) {
-          # Remove intercept
           Z_mat <- model.matrix(update(partial_formula[[i]], . ~ . - 1), data = newdata)
           Z_list[[i]] <- Z_mat
         }
       } else {
-        # Single partial formula applied to all thresholds
         Z_mat <- model.matrix(update(partial_formula, . ~ . - 1), data = newdata)
         Z_list <- replicate(N_thresholds, Z_mat, simplify = FALSE)
       }
@@ -105,8 +110,6 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
     }
   }
 
-
-  # Extract parameter estimates
   thresholds <- object$estimate[1:N_thresholds]
   start_beta <- N_thresholds + 1
   end_beta <- start_beta + ncol(X) - 1
@@ -122,11 +125,6 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
     }
   }
 
-  # Compute linear predictors for each threshold
-  # The model uses CDF of (threshold_i - (Xb + Zg)), so define:
-  # theta_i = threshold_i + (Xb + Zg)
-  # and probability(Y<=category_i+1) = F(-theta_i)
-  # Here, to ease calculations: P(Y<=j) = plogis(-theta_j) or pnorm(-theta_j)
   eta <- X %*% beta
   theta <- matrix(NA, nrow = nrow(X), ncol = N_thresholds)
 
@@ -137,11 +135,7 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
     }
   }
 
-  # Compute cumulative probabilities
-  # P(Y <= category[i+1]) = F(-theta[,i]) where F is logistic or normal CDF
   if (family == "logit") {
-    # F(-x) = plogis(-x) = 1 - plogis(x)
-    # The code can either use plogis(-theta) directly or plogis(theta, lower.tail=FALSE)
     cum_probs <- plogis(-theta)
   } else if (family == "probit") {
     cum_probs <- pnorm(-theta)
@@ -149,30 +143,18 @@ predict.orderedReg <- function(object, newdata = NULL, type = "class", ...) {
     stop("Invalid family: must be 'logit' or 'probit'.")
   }
 
-  # Convert cumulative probs to category probabilities
-  # P(Y=category_1) = cum_probs[,1]
-  # P(Y=category_j) = cum_probs[,j] - cum_probs[,j-1] for j=2,...,N_thresholds
-  # P(Y=category_{N_thresholds+1}) = 1 - cum_probs[,N_thresholds]
-  real_probs <- cbind(cum_probs, 1) # Add a column for the upper bound
-  real_probs <- cbind(real_probs[,1],
-                      diff(real_probs),
-                      1 - real_probs[,N_thresholds])
-
-  # The above produces a (N x (N_thresholds+2)) matrix. We need only N_thresholds+1 columns.
-  # Actually, let's do it step by step:
   real_probs <- matrix(nrow = nrow(X), ncol = N_thresholds + 1)
-  real_probs[,1] <- cum_probs[,1]
+  real_probs[, 1] <- cum_probs[, 1]
   for (i in 2:N_thresholds) {
-    real_probs[,i] <- cum_probs[,i] - cum_probs[,i-1]
+    real_probs[, i] <- cum_probs[, i] - cum_probs[, i-1]
   }
-  real_probs[,N_thresholds+1] <- 1 - cum_probs[,N_thresholds]
+  real_probs[, N_thresholds + 1] <- 1 - cum_probs[, N_thresholds]
 
-  # Decide return type
+  epsilon <- .Machine$double.eps
+  real_probs <- pmax(pmin(real_probs, 1 - epsilon), epsilon)
+
   if (type == "class") {
-    # Return the category index that has the highest probability
-    # Convert numeric index to category levels if needed
     pred_indices <- max.col(real_probs, ties.method = "first")
-    # categories is sorted, match prediction indices to actual categories
     return(categories[pred_indices])
   } else if (type == "prob") {
     return(real_probs)

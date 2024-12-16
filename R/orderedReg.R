@@ -6,6 +6,12 @@
 #' If a list is provided, each element corresponds to a specific outcome level (excluding the first level).
 #' @param data A data frame containing the variables in the model.
 #' @param method The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".
+#'   - "NR": Newton-Raphson
+#'   - "BFGS": Broyden–Fletcher–Goldfarb–Shanno Algorithm
+#'   - "BFGS-R": Broyden–Fletcher–Goldfarb–Shanno Algorithm, Implemented in R
+#'   - "CG": Conjugate Gradient
+#'   - "NM": Nelder-Mead
+#'   - "SANN": Simulated Annealing
 #' @param family The family of the model, either "logit" or "probit". Default is "logit".
 #' @param verbose Logical indicating whether to print optimization details during fitting. Default is `FALSE`.
 #' @param weights Name of the variable in the data containing sampling weights (optional).
@@ -162,6 +168,20 @@ orderedReg <- function(
     initial_params <- c(alpha_init, beta_init)
   }
 
+
+  # In the orderedReg function, enhance input validation
+  if (ncol(X) == 0) {
+    stop("No predictor variables found in the model matrix. Check your formula.")
+  }
+
+  if (any(is.na(y))) {
+    stop("Missing values in the response variable are not allowed.")
+  }
+
+  if (any(is.na(X))) {
+    warning("Missing values in predictor variables. Consider imputation or removing observations.")
+  }
+
   # Define log-likelihood function
   logLikFunction <- function(par) {
     logLik <- logLikFunctionCpp(par, categories, X, y, family, Z_list, w)
@@ -180,6 +200,12 @@ orderedReg <- function(
     hessians <- hessApproxCpp(logLikFunction, par, delta = delta)
     print(hessians)
     return(hessians)
+  }
+
+  if (verbose) {
+    cat("Initial parameter estimates:\n")
+    print(initial_params)
+    cat("Optimization method:", method, "\n")
   }
 
   # Now run maxLik with both gradient and Hessian

@@ -29,7 +29,13 @@ If a list is provided, each element corresponds to a specific outcome level (exc
 
 \item{verbose}{Logical indicating whether to print optimization details during fitting. Default is `FALSE`.}
 
-\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".}
+\item{method}{The estimation method to use, from \link[maxLik]{maxLik}. Options include: "NR", "BFGS", "BFGS-R", "CG", "NM", and "SANN".
+- "NR": Newton-Raphson
+- "BFGS": Broyden–Fletcher–Goldfarb–Shanno Algorithm
+- "BFGS-R": Broyden–Fletcher–Goldfarb–Shanno Algorithm, Implemented in R
+- "CG": Conjugate Gradient
+- "NM": Nelder-Mead
+- "SANN": Simulated Annealing}
 
 \item{delta}{Step size for numerical derivatives. Default is 1e-4.}
 }
