@@ -12,7 +12,7 @@ orderedReg(
   weights = NULL,
   verbose = FALSE,
   method = "BFGS",
-  delta = 1e-04
+  iterlim = 1000
 )
 }
 \arguments{
@@ -37,7 +37,7 @@ If a list is provided, each element corresponds to a specific outcome level (exc
 - "NM": Nelder-Mead
 - "SANN": Simulated Annealing}
 
-\item{delta}{Step size for numerical derivatives. Default is 1e-4.}
+\item{iterlim}{Maximum number of iterations for the optimization algorithm. Default is 1000.}
 }
 \value{
 A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.

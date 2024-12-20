@@ -15,7 +15,7 @@
 #' @param family The family of the model, either "logit" or "probit". Default is "logit".
 #' @param verbose Logical indicating whether to print optimization details during fitting. Default is `FALSE`.
 #' @param weights Name of the variable in the data containing sampling weights (optional).
-#' @param delta Step size for numerical derivatives. Default is 1e-4.
+#' @param iterlim Maximum number of iterations for the optimization algorithm. Default is 1000.
 #' @return A list containing model results, including parameter estimates, log-likelihood, gradient, Hessian, etc.
 #' @details
 #' This function estimates ordered and generalized ordered regression models with strictly increasing thresholds.
@@ -102,6 +102,7 @@
 #' @importFrom tidyr unnest
 #' @importFrom purrr map
 #' @importFrom utils head tail globalVariables
+#' @importFrom numDeriv jacobian hessian
 #' @useDynLib orderedReg
 #' @export
 orderedReg <- function(
@@ -112,7 +113,7 @@ orderedReg <- function(
     weights = NULL,
     verbose=FALSE,
     method="BFGS",
-    delta = 1e-4  # step size for numeric derivatives
+    iterlim = 1000
 ) {
   if (!family %in% c("probit","logit")) {
     stop("This code currently supports family='probit' or 'logit'.")
@@ -188,17 +189,23 @@ orderedReg <- function(
     return(logLik)
   }
 
+  # sum of LL
+  sumLL <- function(par){
+    return(sum(logLikFunction(par)))
+  }
+
   # Define gradient and Hessian functions via numeric approximation
   gradFunction <- function(par) {
     # Use numeric gradient approximation
-    gradients <- gradApproxCpp(logLikFunction, par, delta = delta)
+    # gradients <- gradApproxCpp(logLikFunction, par, delta = delta)
+    gradients <- jacobian(sumLL, par)
     return(gradients)
   }
 
   hessFunction <- function(par) {
     # Use numeric Hessian approximation
-    hessians <- hessApproxCpp(logLikFunction, par, delta = delta)
-    print(hessians)
+    # hessians <- hessApproxCpp(sumLL, par, delta = delta)
+    hessians <- hessian(sumLL, par)
     return(hessians)
   }
 
@@ -211,11 +218,12 @@ orderedReg <- function(
   # Now run maxLik with both gradient and Hessian
   fit <- maxLik::maxLik(
     logLik = logLikFunction,
-    # grad = gradFunction,
-    # hess = hessFunction,
+    grad = gradFunction,
+    hess = hessFunction,
     start = initial_params,
     method = method,
-    printLevel = ifelse(verbose, 2, 0)
+    printLevel = ifelse(verbose, 2, 0),
+    iterlim = iterlim
   )
 
   # Adjust thresholds based on estimates and how estimated
@@ -243,7 +251,8 @@ orderedReg <- function(
   attr(fit, "categories") <- categories
   attr(fit, "X") <- X
   attr(fit, "y") <- y
-  attr(fit, "weights") <- w
+  attr(fit, "weights") <- weights
+  attr(fit, "est_method") <- method
   if (!is.null(Z_list)) attr(fit, "Z_list") <- Z_list
 
   return(fit)

@@ -13,7 +13,11 @@ Imports: Rcpp (>= 1.0.12),
          rsample, 
          dplyr,
          purrr,
-         tidyr
+         tidyr,
+         broom,
+         ggplot2,
+         numDeriv,
+         patchwork
 LinkingTo: Rcpp, RcppArmadillo
 Depends: R (>= 3.0.2)
 RoxygenNote: 7.3.2

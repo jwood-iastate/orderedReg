@@ -186,7 +186,7 @@ Rcpp::List gradHessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double d
 }
 
 // [[Rcpp::export]]
-Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-4) {
+Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-8) {
   int nx = x.size();
   Rcpp::NumericVector fxVec = fun(x);
   if (fxVec.size()!=1) Rcpp::stop("Function must return a scalar.");
@@ -231,7 +231,7 @@ Rcpp::NumericMatrix hessApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, dou
 
 
  // [[Rcpp::export]]
- Rcpp::NumericMatrix gradApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-4) {
+ Rcpp::NumericMatrix gradApproxCpp(Rcpp::Function fun, Rcpp::NumericVector x, double delta=1e-8) {
    int nx = x.size();
 
    if (delta <= 0) {
