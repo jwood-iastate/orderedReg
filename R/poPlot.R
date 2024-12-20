@@ -137,7 +137,7 @@ poPlot <- function(model, n_boot = 1000, seed = 123, iterlim = 1000) {
     filter(!grepl("Threshold|Intercept", term)) %>%
     filter(grepl(":", term)) %>%                    # Keep only terms containing ":"
     mutate(
-      group = sub(":*", "", term)
+      group = sub(":.*", "", term)
     )
 
   print(coefs)
