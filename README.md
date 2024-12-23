@@ -7,6 +7,6 @@ necessary when the proportional odds assumption is not met.
 You can install the development version of `orderedReg` using:
 
 ``` r
-# install.packages("devtools")
-devtools::install_github("jwood-iastate/orderedReg")
+# install.packages("remotes")
+remotes::install_github("jwood-iastate/orderedReg")
 ```
